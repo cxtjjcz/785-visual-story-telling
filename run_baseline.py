@@ -12,9 +12,8 @@ from baseline_model import *
 from hyperparams import  *
 import os
 vocab_save_path = "vocab.pt"
-vist_annotations_dir =''
-images_dir = '\\e\\images\\'
-print(os.listdir('\\e\\images\\train')[:5])
+vist_annotations_dir = '/Users/xiangtic/vist/'
+images_dir = '/Users/xiangtic/vist/images/'
 sis_train = Story_in_Sequence(images_dir+"train", vist_annotations_dir)
 # sis_val = Story_in_Sequence(images_dir+"val", vist_annotations_dir)
 # sis_test = Story_in_Sequence(images_dir+"test", vist_annotations_dir)
@@ -24,19 +23,17 @@ cuda = cuda and torch.cuda.is_available()
 device = torch.device("cuda" if cuda else "cpu")
 
 # build/read vocabulary
-if not osp.exist(vocab_save_path):
+if not osp.exists(vocab_save_path):
     corpus = []
     for story in sis_train.Stories:
-        sent_ids = story['sent_ids']
+        sent_ids = sis_train.Stories[story]['sent_ids']
         for sent_id in sent_ids:
-            corpus.append(sis_train.Sents[sent_id])
+            corpus.append(sis_train.Sents[sent_id]['text'])
     vocab = Vocabulary(corpus, freq_cutoff=3)
     vocab.build()
     pickle.dump(vocab, open(vocab_save_path, 'wb'))
 else:
     vocab = pickle.load(open(vocab_save_path, 'rb'))
-print(vocab.w2i("the"))
-
 #
 #
 # # build dataloader

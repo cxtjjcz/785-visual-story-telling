@@ -16,10 +16,10 @@ class Vocabulary():
     def build(self):
         word_freq = Counter()
         for sent in self.sents:
-            word_freq.add("<s>")
+            word_freq["<s>"] += 1
             for word in sent.split():
-                word_freq.add(word)
-            word_freq.add("</s>")
+                word_freq[word] += 1
+            word_freq["</s>"] += 1
         valid_words = [w for w, v in word_freq.items() if v >= self.cutoff]
         for word in valid_words:
             self.add(word)
@@ -37,12 +37,12 @@ class Vocabulary():
         return self.i2w[wid]
 
     def add(self, word):
-        if word not in self:
-            wid = self.w2i[word]
+        if word not in self.w2i:
+            wid = self.w2i[word] = len(self.w2i)
             self.i2w[wid] = word
             return wid
         else:
-            return self[word]
+            return self.w2i[word]
 
     def sent2vec(self, sent, tokenized=False):
         if not tokenized:
