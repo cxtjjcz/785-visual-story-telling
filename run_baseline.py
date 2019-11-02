@@ -13,13 +13,13 @@ from hyperparams import *
 import os
 
 vocab_save_path = "vocab.pt"
-vist_annotations_dir = ''
-images_dir = 'images\\'
+vist_annotations_dir = '/Users/xiangtic/vist/'
+images_dir = '/Users/xiangtic/vist/images/'
 sis_train = Story_in_Sequence(images_dir + "toy", vist_annotations_dir)
 # sis_val = Story_in_Sequence(images_dir+"val", vist_annotations_dir)
 # sis_test = Story_in_Sequence(images_dir+"test", vist_annotations_dir)
 
-cuda =  True
+cuda = True
 cuda = cuda and torch.cuda.is_available()
 device = torch.device("cuda" if cuda else "cpu")
 
@@ -36,12 +36,14 @@ if not osp.exists(vocab_save_path):
 else:
     vocab = pickle.load(open(vocab_save_path, 'rb'))
 
+
 # build dataloader
 class StoryDataset(Dataset):
     def __init__(self, sis, vocab):
         self.sis = sis
         self.story_indices = list(self.sis.Stories.keys())
         self.vocab = vocab
+
     def __len__(self):
         return len(self.sis.Stories)
 
@@ -66,13 +68,14 @@ class StoryDataset(Dataset):
 
         sents = []
         for sent_id in sent_ids:
-            sent_tensor = self.vocab.sent2vec("<s> "+ self.sis.Sents[sent_id]["text"] +" </s>")
+            sent_tensor = self.vocab.sent2vec("<s> " + self.sis.Sents[sent_id]["text"] + " </s>")
             container = torch.zeros(MAX_SENT_LEN).fill_(self.vocab["<pad>"])
             container[:len(sent_tensor)] = sent_tensor
             sents.append(container)
             # print(container)
         sents = torch.stack(sents)
         return imgs, sents
+
 
 train_story_set = StoryDataset(sis_train, vocab)
 # val_story_set = StoryDataset(sis_val, vocab)
@@ -91,26 +94,27 @@ train_loader = DataLoader(train_story_set, shuffle=False, batch_size=BATCH_SIZE)
 baseline_model = BaselineModel(vocab)
 optimizer = torch.optim.Adam(baseline_model.parameters(), lr=0.01)
 
+
 def train(epochs, model, train_dataloader):
-    init_hidden = torch.rand(1, 1, HIDDEN_SIZE, device=device)
+    init_hidden = torch.rand(1, BATCH_SIZE, HIDDEN_SIZE, device=device)
     model.train()
     for epoch in range(epochs):
         avg_loss = 0
         for batch_num, (images, sents) in enumerate(train_dataloader):
-            print(len(sents))
-            print(len(sents[0]))
             optimizer.zero_grad()
             loss = -model(images, sents, init_hidden)
             loss.backward()
             optimizer.step()
-
             avg_loss += loss.item()
+            print(loss.item())
 
             if batch_num % 50 == 49:
-                print('Epoch: {}\tBatch: {}\tAvg-Loss: {:.4f}'.format(epoch+1, batch_num+1, avg_loss/50))
+                print('Epoch: {}\tBatch: {}\tAvg-Loss: {:.4f}'.format(epoch + 1, batch_num + 1, avg_loss / 50))
                 avg_loss = 0.0
 
             # torch.cuda.empty_cache()
 
         # torch.save(model.state_dict(), model_path + "/"+ str(epoch) +".pt")
+
+
 train(1, baseline_model, train_loader)

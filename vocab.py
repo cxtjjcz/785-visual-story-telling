@@ -4,9 +4,10 @@ from collections import Counter
 import torch
 import pickle
 
+
 class Vocabulary():
     def __init__(self, sents, freq_cutoff=3):
-        self.w2i = {"<s>":0, "</s>":1, "<unk>":2, "<pad>":3}
+        self.w2i = {"<s>": 0, "</s>": 1, "<unk>": 2, "<pad>": 3}
         self.i2w = {v: k for k, v in self.w2i.items()}
         self.unk_id = 2
         self.sents = sents
@@ -47,4 +48,4 @@ class Vocabulary():
     def sent2vec(self, sent, tokenized=False):
         if not tokenized:
             sent = sent.split()
-        return torch.tensor([self[w] for w in sent])
+        return torch.tensor([self[w] for w in sent]).type(torch.LongTensor)
