@@ -1,4 +1,3 @@
-#credit: https://github.com/lichengunc/vist_api
 import os.path as osp
 import json
 import numpy as np
@@ -9,7 +8,7 @@ from PIL import Image
 import matplotlib.pyplot as plt
 
 class Story_in_Sequence:
-	def __init__(self, images_dir, annotations_dir, splits=None):
+	def __init__(self, images_dir, annotations_dir):
 		"""
 		The vist_dir should contain images and annotations, which further contain train/val/test.
 		We will load train/val/test together on default and add split in albums, and make mapping.
@@ -22,18 +21,12 @@ class Story_in_Sequence:
 		self.annotations_dir = annotations_dir
 
 		# Load annotations and add splits to each album
-		if not splits:
-			splits = ['train', 'val', 'test']
 		sis = {'images': [], 'albums': [], 'annotations': []}
-		for split in splits:
-			b = datetime.now()
-			info = json.load(open(osp.join(annotations_dir, 'sis', split+'.story-in-sequence.json')))
-			print('sis\'s [%s] loaded. It took %.2f seconds.' % (split, (datetime.now() - b).total_seconds()))
-			for album in info['albums']:
-				album['split'] = split
-			sis['albums'] += info['albums']
-			sis['images'] += info['images']
-			sis['annotations'] += info['annotations']
+		b = datetime.now()
+		info = json.load(open(osp.join(annotations_dir, 'sis', 'train.story-in-sequence.json')))
+		sis['albums'] += info['albums']
+		sis['images'] += info['images']
+		sis['annotations'] += info['annotations']
 
 		sents = []
 		for ann in sis['annotations']:
@@ -47,21 +40,21 @@ class Story_in_Sequence:
 
 		# make mapping
 		print('Make mapping ...')
-		self.Albums = {album['id']: album for album in sis['albums']}
+		# self.Albums = {album['id']: album for album in sis['albums']}
 		self.Images = {img['id']: img for img in sis['images']}
 		self.Sents  = {sent['id']: sent for sent in sents}
 
-		# album_id -> img_ids
-		album_to_img_ids = {}
-		for img in sis['images']:
-			album_id = img['album_id']
-			img_id = img['id']
-			album_to_img_ids[album_id] = album_to_img_ids.get(album_id, []) + [img_id]
-		def getDateTime(img_id):
-			x = self.Images[img_id]['datetaken']
-			return datetime.strptime(x, '%Y-%m-%d %H:%M:%S')
-		for album_id, img_ids in album_to_img_ids.items():
-			img_ids.sort(key=getDateTime)
+		# # album_id -> img_ids
+		# album_to_img_ids = {}
+		# for img in sis['images']:
+		# 	album_id = img['album_id']
+		# 	img_id = img['id']
+		# 	album_to_img_ids[album_id] = album_to_img_ids.get(album_id, []) + [img_id]
+		# def getDateTime(img_id):
+		# 	x = self.Images[img_id]['datetaken']
+		# 	return datetime.strptime(x, '%Y-%m-%d %H:%M:%S')
+		# for album_id, img_ids in album_to_img_ids.items():
+		# 	img_ids.sort(key=getDateTime)
 
 		# story_id -> sent_ids
 		story_to_sent_ids = {}
@@ -74,16 +67,16 @@ class Story_in_Sequence:
 			sent_ids.sort(key=get_order)
 
 		# album_id -> story_ids
-		album_to_story_ids = {}
-		for story_id, sent_ids in story_to_sent_ids.items():
-			sent = self.Sents[sent_ids[0]]
-			album_id = sent['album_id']
-			album_to_story_ids[album_id] = album_to_story_ids.get(album_id, []) + [story_id]
+		# album_to_story_ids = {}
+		# for story_id, sent_ids in story_to_sent_ids.items():
+		# 	sent = self.Sents[sent_ids[0]]
+		# 	album_id = sent['album_id']
+		# 	album_to_story_ids[album_id] = album_to_story_ids.get(album_id, []) + [story_id]
 
 		# add to albums (and self.Albums)
-		for album in sis['albums']:
-			album['img_ids'] = album_to_img_ids[album['id']]
-			album['story_ids'] = album_to_story_ids[album['id']]
+		# for album in sis['albums']:
+		# 	album['img_ids'] = album_to_img_ids[album['id']]
+		# 	album['story_ids'] = album_to_story_ids[album['id']]
 
 		# make Stories: {story_id: {id, album_id, sent_ids, img_ids}}
 		self.Stories = {story_id: {'id': story_id, 
@@ -95,17 +88,15 @@ class Story_in_Sequence:
 		print('Mapping for [Albums][Images][Stories][Sents] done.')
 
 		# back to albums, images, stories, sents
-		self.albums = self.Albums.values()
+		# self.albums = self.Albums.values()
 		self.images = self.Images.values()
 		self.stories = self.Stories.values()
 		self.sents = self.Sents.values()
+		self.filter_stories()
 
 
 	def read_img(self, img_file):
 		img_content = Image.open(img_file)
-		# if len(img_content.shape) == 2:
-		# 	img_content = np.tile(img_content[:,:,np.newaxis], (1,1,3))
-		# img_content = img_content.resize((224, 224))
 		return img_content
 
 	def show_story(self, story_id, show_image=True, show_sents=True):
@@ -116,9 +107,7 @@ class Story_in_Sequence:
 			for i, sent_id in enumerate(sent_ids):
 				img_id = self.Sents[sent_id]['img_id']
 				img = self.Images[img_id]
-				album_id = img['album_id']
-				split = self.Albums[album_id]['split']
-				img_file = osp.join(self.images_dir, split, img_id + '.jpg')
+				img_file = osp.join(self.images_dir, img_id + '.jpg')
 				img_content = self.read_img(img_file)
 				ax = plt.subplot(1, len(sent_ids), i+1)
 				ax.imshow(img_content)
@@ -130,152 +119,24 @@ class Story_in_Sequence:
 				sent = self.Sents[sent_id]
 				print('%s: img_id[%s], %s' % (sent['order'], sent['img_id'], sent['text']))
 
-
-	def show_album(self, album_id):
-		album = self.Albums[album_id]
-		img_ids = album['img_ids']
-		plt.figure()
-		cols = 5
-		rows = math.ceil(len(img_ids)/float(cols))
-		for i, img_id in enumerate(img_ids):
-			img = self.Images[img_id]
-			img_file = osp.join(self.images_dir, album['split'], img_id + '.jpg')
-			img_content = self.read_img(img_file)
-			ax = plt.subplot(rows, cols, i+1)
-			ax.imshow(img_content)
-			ax.axis('off')
-			ax.set_title(str(img_id)+'\n'+img['datetaken'][5:])
-		plt.show()
 	
-	def filter_img(self):
-		pops = set()
-		pops_albums = set()
+	def filter_stories(self):
+		valid_stories = dict()
 		idx = 0
 		idx2 = 0
-		for img_id in self.Images.keys():
-			img_album_id = self.Images[img_id]['album_id']
-			img_path = osp.join(self.images_dir, self.Albums[img_album_id]['split'], img_id + ".jpg")
-			idx2 += 1
-			if osp.exists(img_path) == False:
-				idx += 1
-				pops.add(img_id)
-				pops_albums.add(img_album_id)
-		for img in pops:
-			self.Images.pop(img)
-		for albums in pops_albums:
-			self.Albums.pop(albums)
-		print("Removed",idx, "out of", idx2, "images.")
+		for story_id in self.Stories:
+			img_ids = self.Stories[story_id]['img_ids']
+			sent_ids = self.Stories[story_id]['sent_ids']
+			if len(img_ids) != 5 or len(sent_ids) != 5:
+				continue
+			all_img_here = True
+			for img_id in img_ids:
+				img_path = osp.join(self.images_dir, img_id + ".jpg")
+				all_img_here = osp.exists(img_path) and all_img_here
+			
+			if all_img_here:
+				valid_stories[story_id] = self.Stories[story_id]
 
 
-# class Description_in_Isolation:
-# 	def __init__(self, images_dir, annotations_dir, splits=None):
-# 		"""
-# 		The vist_dir should contain images and annotations, which futher contain train/val/test
-# 		We will load train/val/test together on default and add split in albums, and make mapping.
-# 		- albums  = [{id, title, vist_label, description, img_ids}]
-# 		- images  = [{id, album_id, datetaken, title, text, tags}]
-# 		- sents   = [{id, album_id, img_id, order, original_text, text}], order no use???
-# 		"""
-# 		self.images_dir = images_dir
-# 		self.annotations_dir = annotations_dir
-
-# 		# Load annotations and add splits to each album
-# 		if not splits:
-# 			splits = ['train', 'val', 'test']
-# 		dii = {'images': [], 'albums': [], 'annotations': []}
-# 		for split in splits:
-# 			b = datetime.now()
-# 			info = json.load(open(osp.join(annotations_dir, 'dii', split+'.description-in-isolation.json')))
-# 			print('dii\'s [%s] loaded. It took %.2f seconds.' % (split, (datetime.now() - b).total_seconds()))
-# 			for album in info['albums']:
-# 				album['split'] = split
-# 			dii['albums'] += info['albums']
-# 			dii['images'] += info['images']
-# 			dii['annotations'] += info['annotations']
-
-# 		sents = []
-# 		for i, ann in enumerate(dii['annotations']):
-# 			# sent = {album_id, img_id, order, text, original_text, }
-# 			sent = ann[0].copy()
-# 			sent['order'] = sent.pop('photo_order_in_story')
-# 			sent['img_id'] = sent.pop('photo_flickr_id')
-# 			sent['id'] = str(i)
-# 			sents += [sent]
-
-# 		# make mapping
-# 		print('Make mapping ...')
-# 		self.Albums = {album['id']: album for album in dii['albums']}
-# 		self.Images = {img['id']: img for img in dii['images']}
-# 		self.Sents  = {sent['id']: sent for sent in sents}
-
-# 		# album_id -> img_ids
-# 		album_to_img_ids = {}
-# 		for img in dii['images']:
-# 			album_id = img['album_id']
-# 			img_id = img['id']
-# 			album_to_img_ids[album_id] = album_to_img_ids.get(album_id, []) + [img_id]
-# 		def getDateTime(img_id):
-# 			x = self.Images[img_id]['datetaken']
-# 			return datetime.strptime(x, '%Y-%m-%d %H:%M:%S')
-# 		for album_id, img_ids in album_to_img_ids.items():
-# 			img_ids.sort(key=getDateTime)
-# 		# add img_ids to albums (and self.Albums)
-# 		for album in dii['albums']:
-# 			album['img_ids'] = album_to_img_ids[album['id']]
-
-# 		# img_id -> sent_ids
-# 		img_to_sent_ids = {}
-# 		for sent in sents:
-# 			img_id = sent['img_id']
-# 			img_to_sent_ids[img_id] = img_to_sent_ids.get(img_id, []) + [sent['id']]
-# 		# add sent_ids to images
-# 		for img_id in img_to_sent_ids.keys():
-# 			self.Images[img_id]['sent_ids'] = img_to_sent_ids[img_id]
-# 		for img_id, img in self.Images.items():
-# 			if 'sent_ids' not in img:
-# 				img['sent_ids'] = []
-
-# 		print('Mapping for [Albums][Images][Sents] done.')
-		
-# 		# back to albums, images, stories, sents
-# 		self.albums = self.Albums.values()
-# 		self.images = self.Images.values()
-# 		self.sents = self.Sents.values()
-
-# 	def read_img(self, img_file):
-# 		print("hahaha")
-# 		print(img_file)
-# 		img_content = PIL.Image.open(img_file)
-# 		if len(img_content.shape) == 2:
-# 			img_content = np.tile(img_content[:,:,np.newaxis], (1,1,3))
-# 		img_content = img_content.resize((224, 224))
-# 		return img_content
-
-# 	def show_imgs_with_sents(self, img_ids, show_image=True):
-# 		if show_image:
-# 			plt.figure()
-# 			cols = 5
-# 			rows = math.ceil(len(img_ids) / float(cols))
-# 			for i, img_id in enumerate(img_ids):
-# 				img = self.Images[img_id]
-# 				album = self.Albums[img['album_id']]
-# 				img_file = osp.join(self.images_dir, album['split'], img_id + '.jpg')
-# 				img_content = self.read_img(img_file)
-# 				ax = plt.subplot(rows, cols, i+1)
-# 				ax.imshow(img_content)
-# 				ax.axis('off')
-# 				ax.set_title(str(img_id)+'\n'+img['datetaken'][5:])
-# 			plt.show()
-
-# 		for i, img_id in enumerate(img_ids):
-# 			sent_ids = self.Images[img_id]['sent_ids']
-# 			for k, sent_id in enumerate(sent_ids):
-# 				sent = self.Sents[sent_id]
-# 				print('%s.%s: img_id[%s], %s' % (sent['order'], k, sent['img_id'], sent['text']))
-
-
-
-
-
-
-
+		self.Stories = valid_stories
+		print(len(self.Stories), "stories remaining.")
