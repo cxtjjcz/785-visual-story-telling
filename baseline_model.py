@@ -1,9 +1,11 @@
-FC7_SIZE = 4096
-ENCODER_HIDDEN = 1000
-DECODER_HIDDEN = 1000
-EMBEDDING_SIZE = 250
-VOCAB_SIZE = 1000
-NUM_PICS = 5 # www 
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.utils.data import Dataset, DataLoader
+import torchvision.models as models
+from hyperparams import  *
+
 
 class fc7_Extractor(nn.Module):
     def __init__(self):
@@ -24,7 +26,7 @@ class Encoder(nn.Module):
     def __init__(self):
         super(Encoder).__init__()
         self.fc7 = fc7_Extractor()
-        self.gru = nn.GRU(FC7_SIZE, ENCODER_HIDDEN)
+        self.gru = nn.GRU(FC7_SIZE, HIDDEN_SIZE)
 
     # batch * 5 * 3 * w * h
     def forward(self, images, hidden):
@@ -42,34 +44,34 @@ class Encoder(nn.Module):
 class Decoder(nn.Module):
     def __init__(self):
         super(Decoder).__init__()
-        self.hidden_size = DECODER_HIDDEN
+        self.hidden_size = HIDDEN_SIZE
         self.embedding = nn.Embedding(VOCAB_SIZE, EMBEDDING_SIZE)
-        self.gru = nn.GRU(EMBEDDING_SIZE, DECODER_HIDDEN)
-        self.out = nn.Linear(EMBEDDING_SIZE, VOCAB_SIZE)
-        self.softmax = nn.LogSoftmax(dim=1)
-        
+        self.gru = nn.GRU(EMBEDDING_SIZE, HIDDEN_SIZE)
+
     def forward(self, target_sents, hidden):
-        # x: batch x 
-        # 
         output = self.embedding(target_sents)
         output = output.view(1, BATCH_SIZE, -1)
         # output = F.relu(output)
         output, hidden= self.gru(output, hidden)
-        output = self.softmax(self.out(output[0]))
         return output, hidden
 
 class BaselineModel(nn.Module):
-    def __init__(self):
+    def __init__(self, vocab):
         super(BaselineModel).__init__()
         self.encoder = Encoder()
-        self.decoder = Decoder()        
+        self.decoder = Decoder()
+        self.vocab = vocab
+        self.out_layer = nn.Linear(EMBEDDING_SIZE, VOCAB_SIZE)
+        self.softmax = nn.LogSoftmax(dim=1)
         self.loss = nn.NLLLoss() # default mean
 
-    # TODO
-    def forward(self, x, hidden):
-        fc7_feats = self.fc7(x) # batch x 4096
-        # out, hidden = self.encoder(fc7_feats, hidden)
-        
-        return 0
-
-# TODO 
+    def forward(self, images, sents, hidden):
+        sents_feats = [self.vocab.sent2vec(s) for s in sents]
+        sents_feats = torch.stack(sents_feats)
+        out, hidden = self.encoder(images, hidden)
+        out, hidden = self.decoder(sents_feats, hidden)
+        for i, sent_out in enumerate(out):
+            output = self.out_layer(sent_out)
+            sm_out = self.softmax(self.out(out[0]))
+            loss = self.loss(sm_out, sents_feats[i])
+        return loss

@@ -1,20 +1,23 @@
 # a vocabulary calss adapted from 11731 assignment 1 starter code
 # https://phontron.com/class/mtandseq2seq2019/assignments.html
-class Vocab():
-    def __init__(sents, freq_cutoff=3):
+from collections import Counter
+import torch
+import pickle
+
+class Vocabulary():
+    def __init__(self, sents, freq_cutoff=3):
         self.w2i = {"<s>":0, "</s>":1, "<unk>":2}
         self.i2w = {v: k for k, v in self.w2i.items()}
-
         self.unk_id = 2
         self.sents = sents
         self.cutoff = freq_cutoff
         self.build()
 
-    def build():
-        word_freq = Counter(text)
+    def build(self):
+        word_freq = Counter()
         for sent in self.sents:
             word_freq.add("<s>")
-            for word in sent["text"].split():
+            for word in sent.split():
                 word_freq.add(word)
             word_freq.add("</s>")
         valid_words = [w for w, v in word_freq.items() if v >= self.cutoff]
@@ -44,4 +47,4 @@ class Vocab():
     def sent2vec(self, sent, tokenized=False):
         if not tokenized:
             sent = sent.split()
-        return np.array([self[w] for w in sent])
+        return torch.tensor([self[w] for w in sent])
