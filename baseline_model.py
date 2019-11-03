@@ -30,7 +30,7 @@ class Encoder(nn.Module):
         batch_size, num_pics, channels, width, height = images.size()
         embedded = torch.zeros((num_pics, batch_size, FC7_SIZE))
         for i in range(num_pics):
-            batch_i = images[:, -i, :, :, :]  # ith pics
+            batch_i = images[:, -(i+1), :, :, :]  # ith pics
             features = self.fc7(batch_i)  # out shape:batch * 5 * 4096
             embedded[i, :, :] = features  # shape: num_pic * batch * 4096
         output, hidden = self.gru(embedded, hidden)
@@ -62,7 +62,7 @@ class BaselineModel(nn.Module):
         self.decoder = Decoder(vocab_size=len(vocab))
         self.vocab = vocab
         self.out_layer = nn.Linear(HIDDEN_SIZE, len(vocab))
-        self.softmax = nn.LogSoftmax(dim=1)
+        self.logSoftmax = nn.LogSoftmax(dim=1)
         self.loss = nn.NLLLoss()  # default mean
 
     def forward(self, images, sents, hidden):
@@ -70,7 +70,7 @@ class BaselineModel(nn.Module):
         out, hidden = self.encoder(images, hidden)
         out, hidden = self.decoder(sents, hidden)
         sents = sents.view(BATCH_SIZE, -1)
-        output = self.out_layer(out)
+        output = self.logSoftmax(self.out_layer(out))
         loss = 0.0
         # print("output", out.size())
         # print("sentence", sents.size())
