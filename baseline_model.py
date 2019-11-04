@@ -7,9 +7,10 @@ from hyperparams import *
 
 
 class fc7_Extractor(nn.Module):
-    def __init__(self):
+    def __init__(self, fine_tune=False):
         super(fc7_Extractor, self).__init__()
         self.pretrained = models.vgg16(pretrained=True)
+        self.fine_tune(fine_tune)
 
     def forward(self, x):
         x = self.pretrained.features(x)
@@ -17,6 +18,12 @@ class fc7_Extractor(nn.Module):
         x = torch.flatten(x, 1)
         x = nn.Sequential(*list(self.pretrained.classifier.children())[:-1])(x)
         return x
+
+    def fine_tune(self, fine_tune):
+        if not fine_tune:
+            for p in self.pretrained.parameters():
+                p.requires_grad = False
+
 
 
 class Encoder(nn.Module):
@@ -47,10 +54,12 @@ class Decoder(nn.Module):
         self.gru = nn.GRU(EMBEDDING_SIZE, HIDDEN_SIZE, batch_first=True)
 
     def forward(self, target_sents, hidden):
+        batch_size, _ = target_sents.size()
         output = self.embedding(target_sents.type(torch.LongTensor))
+        # print(output)
+        # print(output.size())
         # output shape : bs * 5 * max_sent_len * embeeding_size
         # output = F.relu(output)
-        output = output.view((BATCH_SIZE, -1, EMBEDDING_SIZE))
         output, hidden = self.gru(output, hidden)
         return output, hidden
 
@@ -65,17 +74,28 @@ class BaselineModel(nn.Module):
         self.logSoftmax = nn.LogSoftmax(dim=1)
         self.loss = nn.NLLLoss()  # default mean
 
-    def forward(self, images, sents, hidden):
+    def init_hidden(self, batch_size, device):
+        return torch.rand(1, batch_size, HIDDEN_SIZE, device=device)
+
+    def get_decoded_output(self, decoder_input, hidden):
+        output, hidden = self.decoder(decoder_input, hidden)
+        output = output.view(output.size()[0], -1)
+        return F.softmax(self.out_layer(output), dim=1), hidden
+
+    def forward(self, images, sents, device):
         # require sents to be of shape batch_size * 5 * MAX_LEN
-        out, hidden = self.encoder(images, hidden)
+        batch_size, _, _, _ ,_ = images.size()
+        out, hidden = self.encoder(images, self.init_hidden(batch_size, device))
         out, hidden = self.decoder(sents, hidden)
-        sents = sents.view(BATCH_SIZE, -1)
-        output = self.logSoftmax(self.out_layer(out))
+        out_embedding = self.out_layer(out)
+        output_loss = self.logSoftmax(out_embedding)  # output for calculating loss
+        output_return = F.softmax(out_embedding, dim=1)
+
         loss = 0.0
         # print("output", out.size())
         # print("sentence", sents.size())
-        for i in range(5 * MAX_SENT_LEN):
-            output_i = output[:, i]
+        for i in range(MAX_STORY_LEN):
+            output_i = output_loss[:, i]
             sent_i = sents[:, i].type(torch.LongTensor)
             # print(output.size(), sents.size())
             # print(output_i.size(), sent_i.size())
@@ -85,4 +105,6 @@ class BaselineModel(nn.Module):
         # output = self.out_layer(out).view(-1, len(self.vocab))
         # sents = sents.view(-1).type(torch.LongTensor)
         # score = -self.loss(output, sents)
-        return -loss
+        # print(output_return)
+        # print(output_return.shape)
+        return -loss, output_return

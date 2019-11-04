@@ -49,3 +49,7 @@ class Vocabulary():
         if not tokenized:
             sent = sent.split()
         return torch.tensor([self[w] for w in sent]).type(torch.LongTensor)
+
+    def vec2sent(self, sent):
+        result = [self.i2w[i] for i in sent]
+        return " ".join(result)
