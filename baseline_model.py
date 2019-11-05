@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
+from torch.nn.utils.rnn import pack_sequence, pad_packed_sequence, pack_padded_sequence
 import torchvision.models as models
 from hyperparams import *
 
@@ -23,7 +24,6 @@ class fc7_Extractor(nn.Module):
         if not fine_tune:
             for p in self.pretrained.parameters():
                 p.requires_grad = False
-
 
 
 class Encoder(nn.Module):
@@ -51,16 +51,12 @@ class Decoder(nn.Module):
         super(Decoder, self).__init__()
         self.hidden_size = HIDDEN_SIZE
         self.embedding = nn.Embedding(vocab_size, EMBEDDING_SIZE)
-        self.gru = nn.GRU(EMBEDDING_SIZE, HIDDEN_SIZE, batch_first=True)
+        self.gru = nn.GRU(EMBEDDING_SIZE, HIDDEN_SIZE)
 
-    def forward(self, target_sents, hidden):
-        batch_size, _ = target_sents.size()
-        output = self.embedding(target_sents.type(torch.LongTensor))
-        # print(output)
-        # print(output.size())
-        # output shape : bs * 5 * max_sent_len * embeeding_size
-        # output = F.relu(output)
-        output, hidden = self.gru(output, hidden)
+    def forward(self, padded_stories, hidden, lens):
+        padded_stories = self.embedding(padded_stories)
+        padded_stories = pack_padded_sequence(padded_stories, lens, enforce_sorted=False)
+        output, hidden = self.gru(padded_stories, hidden)
         return output, hidden
 
 
@@ -73,38 +69,29 @@ class BaselineModel(nn.Module):
         self.out_layer = nn.Linear(HIDDEN_SIZE, len(vocab))
         self.logSoftmax = nn.LogSoftmax(dim=1)
         self.loss = nn.NLLLoss()  # default mean
-
+                                
     def init_hidden(self, batch_size, device):
         return torch.rand(1, batch_size, HIDDEN_SIZE, device=device)
 
-    def get_decoded_output(self, decoder_input, hidden):
-        output, hidden = self.decoder(decoder_input, hidden)
-        output = output.view(output.size()[0], -1)
-        return F.softmax(self.out_layer(output), dim=1), hidden
+    def get_decoded_output(self, decoder_input, hidden, lens):
+        output, hidden = self.decoder(decoder_input, hidden, lens)
+        output, _ = pad_packed_sequence(output)
+        output = self.out_layer(output)
+        # output = output.view(output.size()[0], -1)
+        return output, hidden
 
-    def forward(self, images, sents, device):
-        # require sents to be of shape batch_size * 5 * MAX_LEN
+    def forward(self, images, stories, story_lens, device):
+        story_lens = torch.Tensor(story_lens)
         batch_size, _, _, _ ,_ = images.size()
         out, hidden = self.encoder(images, self.init_hidden(batch_size, device))
-        out, hidden = self.decoder(sents, hidden)
-        out_embedding = self.out_layer(out)
-        output_loss = self.logSoftmax(out_embedding)  # output for calculating loss
-        output_return = F.softmax(out_embedding, dim=1)
-
+        out, hidden = self.decoder(stories, hidden, story_lens)
+        n_tokens = story_lens.sum() - story_lens.size(0)
         loss = 0.0
-        # print("output", out.size())
-        # print("sentence", sents.size())
-        for i in range(MAX_STORY_LEN):
-            output_i = output_loss[:, i]
-            sent_i = sents[:, i].type(torch.LongTensor)
-            # print(output.size(), sents.size())
-            # print(output_i.size(), sent_i.size())
-            loss += self.loss(output_i, sent_i)
-
-        # check if this work as intended
-        # output = self.out_layer(out).view(-1, len(self.vocab))
-        # sents = sents.view(-1).type(torch.LongTensor)
-        # score = -self.loss(output, sents)
-        # print(output_return)
-        # print(output_return.shape)
-        return -loss, output_return
+        criterion = nn.CrossEntropyLoss(reduction='sum')
+        out, out_lens = pad_packed_sequence(out)
+        out = self.out_layer(out)
+        for i in range(out.size()[0]-1):
+            active = i + 1 < story_lens
+            loss += criterion(out[i, active,: ], stories[i+1, active])
+        loss /= n_tokens
+        return -loss

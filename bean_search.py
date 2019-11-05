@@ -2,6 +2,7 @@
 import operator
 import torch
 from hyperparams import *
+from torch.nn.utils.rnn import pack_sequence, pad_packed_sequence, pack_padded_sequence
 import torch.nn as nn
 import torch.nn.functional as F
 from asyncio import PriorityQueue
@@ -136,7 +137,8 @@ def get_unprocessed_sent(data, vocab):
     data = data.numpy()
     for batch in range(data.shape[0]):
         vec = data[batch, :]
-        print(vocab.vec2sent(vec))
+        if vocab.vec2sent(vec) != '<unk>':
+            print(vocab.vec2sent(vec))
 
 
 def greedy_decode(model, encoder_input, device, vocab):
@@ -150,16 +152,18 @@ def greedy_decode(model, encoder_input, device, vocab):
     batch_size, _, _, _, _ = encoder_input.size()  # batch * 5 * 3 * w * h
     init_hidden = torch.rand(1, batch_size, HIDDEN_SIZE, device=device)
     decoded_batch = torch.zeros((batch_size, MAX_STORY_LEN), device=device)
-    decoder_input = torch.LongTensor([[SOS_token] for _ in range(batch_size)], device=device)
+    decoder_input = torch.LongTensor([[SOS_token] for _ in range(batch_size)], device=device).view(-1, batch_size)
+    decoded_batch[:, 0] = decoder_input.view(-1)
+    lens = torch.Tensor([1 for i in range(batch_size)])
 
     _, hidden = model.encoder(encoder_input, init_hidden)
 
-    for t in range(MAX_STORY_LEN):
-        decoder_output, hidden = model.get_decoded_output(decoder_input, hidden)
-        # decoder_output = decoder_output.view(batch_size, -1)
-        _, decoder_output = torch.max(decoder_output.data, dim=1)
-        decoded_batch[:, t] = decoder_output.view(-1)
-        decoder_input = decoder_output.view(batch_size, -1)
+    for t in range(1, MAX_STORY_LEN):
+        decoder_output, hidden = model.get_decoded_output(decoder_input, hidden, lens)
+        decoder_output = decoder_output.squeeze()
+        decoder_output = torch.argmax(decoder_output, dim=1)
+        decoded_batch[:, t] = decoder_output
+        decoder_input = (decoder_output.view(-1, batch_size))
 
     model.train()
     get_unprocessed_sent(decoded_batch, vocab)
