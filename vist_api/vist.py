@@ -6,7 +6,9 @@ from datetime import datetime
 from pprint import pprint
 from PIL import Image
 import matplotlib.pyplot as plt
-
+import warnings
+import pdb
+# warnings.filterwarnings("error") # filter out images that give warnings
 
 class Story_in_Sequence:
     def __init__(self, images_dir, annotations_dir):
@@ -133,10 +135,21 @@ class Story_in_Sequence:
             all_img_here = True
             for img_id in img_ids:
                 img_path = osp.join(self.images_dir, img_id + ".jpg")
-                all_img_here = osp.exists(img_path) and all_img_here
+                image_path_exists = osp.exists(img_path)
+                if (image_path_exists):
+                    try:
+                        with Image.open(img_path) as img: # open if can
+                            open_image = img
+                    except:
+                        image_path_exists = False
+
+                all_img_here = image_path_exists and all_img_here
+                if (all_img_here == False):
+                    break
 
             if all_img_here:
                 valid_stories[story_id] = self.Stories[story_id]
+                
 
         self.Stories = valid_stories
         print(len(self.Stories), "stories remaining.")
