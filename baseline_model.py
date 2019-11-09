@@ -1,11 +1,12 @@
+import sys, pdb, os, time
+import os.path as osp
+
+import torchvision.models as models
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
-from torch.nn.utils.rnn import pack_sequence, pad_packed_sequence, pack_padded_sequence
-import torchvision.models as models
+from torch.nn.utils.rnn import pack_sequence, pad_packed_sequence, pad_sequence, pack_padded_sequence
 from hyperparams import *
-
 
 class fc7_Extractor(nn.Module):
     def __init__(self, fine_tune=False):
@@ -25,7 +26,7 @@ class fc7_Extractor(nn.Module):
             for p in self.pretrained.parameters():
                 p.requires_grad = False
 
-
+                
 class Encoder(nn.Module):
     def __init__(self):
         super(Encoder, self).__init__()
@@ -33,9 +34,9 @@ class Encoder(nn.Module):
         self.gru = nn.GRU(FC7_SIZE, HIDDEN_SIZE)
 
     # batch * 5 * 3 * w * h
-    def forward(self, images, hidden):
+    def forward(self, images, hidden, device='cuda'):
         batch_size, num_pics, channels, width, height = images.size()
-        embedded = torch.zeros((num_pics, batch_size, FC7_SIZE))
+        embedded = torch.zeros((num_pics, batch_size, FC7_SIZE)).to(device)
         for i in range(num_pics):
             batch_i = images[:, -(i+1), :, :, :]  # ith pics
             features = self.fc7(batch_i)  # out shape:batch * 5 * 4096
@@ -50,13 +51,13 @@ class Decoder(nn.Module):
     def __init__(self, vocab_size):
         super(Decoder, self).__init__()
         self.hidden_size = HIDDEN_SIZE
-        self.embedding = nn.Embedding(vocab_size, EMBEDDING_SIZE)
+        self.embedding = nn.Embedding(vocab_size, EMBEDDING_SIZE, padding_idx=3)
         self.gru = nn.GRU(EMBEDDING_SIZE, HIDDEN_SIZE)
 
     def forward(self, padded_stories, hidden, lens):
         padded_stories = self.embedding(padded_stories)
-        padded_stories = pack_padded_sequence(padded_stories, lens, enforce_sorted=False)
-        output, hidden = self.gru(padded_stories, hidden)
+        packed_stories = pack_padded_sequence(padded_stories, lens, enforce_sorted=False)
+        output, hidden = self.gru(packed_stories, hidden)
         return output, hidden
 
 
@@ -67,12 +68,9 @@ class BaselineModel(nn.Module):
         self.decoder = Decoder(vocab_size=len(vocab))
         self.vocab = vocab
         self.out_layer = nn.Linear(HIDDEN_SIZE, len(vocab))
-        self.logSoftmax = nn.LogSoftmax(dim=1)
-        self.loss = nn.NLLLoss()  # default mean
-                                
-    def init_hidden(self, batch_size, device):
-        return torch.rand(1, batch_size, HIDDEN_SIZE, device=device)
-
+        self.vocab_length = len(vocab)
+        self.logSoftmax = nn.LogSoftmax(dim=2)
+    
     def get_decoded_output(self, decoder_input, hidden, lens):
         output, hidden = self.decoder(decoder_input, hidden, lens)
         output, _ = pad_packed_sequence(output)
@@ -80,18 +78,25 @@ class BaselineModel(nn.Module):
         # output = output.view(output.size()[0], -1)
         return output, hidden
 
-    def forward(self, images, stories, story_lens, device):
-        story_lens = torch.Tensor(story_lens)
-        batch_size, _, _, _ ,_ = images.size()
-        out, hidden = self.encoder(images, self.init_hidden(batch_size, device))
+    def forward(self, images, stories, story_lens, device='cuda'):
+        batch_size = images.size(0)
+        hidden_1 = torch.rand(1, batch_size, HIDDEN_SIZE).to(device)
+        out, hidden = self.encoder(images, hidden_1)
         out, hidden = self.decoder(stories, hidden, story_lens)
         n_tokens = story_lens.sum() - story_lens.size(0)
+        
         loss = 0.0
         criterion = nn.CrossEntropyLoss(reduction='sum')
+        
         out, out_lens = pad_packed_sequence(out)
-        out = self.out_layer(out)
+        out = self.out_layer(out) 
+        out = self.logSoftmax(out)
+ 
         for i in range(out.size()[0]-1):
             active = i + 1 < story_lens
             loss += criterion(out[i, active,: ], stories[i+1, active])
+            
         loss /= n_tokens
-        return -loss
+        
+        return loss, out
+
