@@ -1,8 +1,9 @@
 import sys, pdb, os, time
 import os.path as osp
 from hyperparams import *
+import numpy as np
 import torch
-
+from nltk.translate.bleu_score import corpus_bleu, SmoothingFunction
 def train(epochs, model, train_dataloader, optimizer, device):
     model.train()
     model.to(device)
@@ -16,7 +17,7 @@ def train(epochs, model, train_dataloader, optimizer, device):
         start_batch_time = time.time()
         for batch_num, (images, sents, sents_len) in enumerate(train_dataloader):
             optimizer.zero_grad()
-            
+            print(batch_num)
             # Process data and put on device
             images = images.float()
             sents = sents.long()
@@ -43,39 +44,64 @@ def train(epochs, model, train_dataloader, optimizer, device):
         print('Total Epoch Time: ', end_time - start_time)
         print('Total Loss: ', total_avg_loss / len(train_dataloader))
         
-def get_unprocessed_sent(data, sents,  vocab):
-    sentence = vocab.vec2sent(data[:, 0])
-    real_sentence = vocab.vec2sent(sents[:, 0])
-    print('='*20)
-    print('SENTENCE: ', sentence)
-    print()
-    print('REAL: ', real_sentence)
-    print()
-    print('='*20)
-    pdb.set_trace()
-    
+def get_unprocessed_sent(data, sents, vocab):
+    references = []
+    hypotheses = []
+    # def process(vec):
+    #     return vocab.vec2sent(vec[np.where(vec>3.0)])
+    # references = np.apply_along_axis(process, 1, data)
+    # hypotheses = np.apply_along_axis(process, 1, sents)
+    for i in range(data.shape[1]):
+        ref_vec = (sents[:, i])
+        hyp_vec = (data[:, i])
+        sentence = vocab.vec2sent(hyp_vec[np.where(hyp_vec > 3.0 )])
+        real_sentence = vocab.vec2sent(ref_vec[np.where(ref_vec > 3.0)])
+        references.append(real_sentence)
+        hypotheses.append(sentence)
+    return references, hypotheses
+
+def get_bleu(refs, hyps, mode="write", ref_path="refs", hyp_path="hyps"):
+    if mode=="write":
+        with open(ref_path, "w") as f:
+            f.write("\n".join(refs))
+            f.close()
+        with open(hyp_path, "w") as f:
+            f.write("\n".join(hyps))
+            f.close()
+    elif mode == "read":
+        refs = open(ref_path, "r").read().splitlines()
+        hyps = open(hyp_path, "r").read().splitlines()
+    smoothing_f = SmoothingFunction().method4  # baseline
+    refs = [[ref.split()] for ref in refs]
+    hyps = [hyp.split() for hyp in hyps]
+    bleu = corpus_bleu(refs, hyps, smoothing_function=smoothing_f)
+    print("BLEU Score: %.4f"%bleu)
+
+
 def test(model, dataloader, device, vocab):
     # Place model in test mode
     with torch.no_grad():
         model.eval()
         model.to(device)
         start_time = time.time() # Timeit
-        
+        references = []
+        hypotheses = []
         for batch_num, (images, sents, sents_len) in enumerate(dataloader):
             # Process data and put on device
             images = images.float()
             sents = sents.long()
             sents_len = sents_len.long()
             images, sents, sents_len = images.to(device), sents.to(device), sents_len.to(device)
-
             # Run through model
             loss, output = model(images, sents, sents_len)
             decoder_output = torch.argmax(output, dim=2)
-            decoder_input = decoder_output.view(-1, 1) # (-1, batch_size) fixed batch_size at 1 for testing for now
+            decoder_input = decoder_output.view(-1, sents.size()[1]) # (-1, batch_size) fixed batch_size at 1 for testing for now
             decoder_input = decoder_input.cpu().detach().numpy()
             sents = sents.cpu().detach().numpy()
-            get_unprocessed_sent(decoder_input, sents, vocab)
+            refs, hyps = get_unprocessed_sent(decoder_input, sents, vocab)
+            references.extend(refs)
+            hypotheses.extend(hyps)
 
+        get_bleu(references, hypotheses, mode="write")
         end_time = time.time() # Timeit
         print('Total Test Time: ', end_time - start_time)
-
