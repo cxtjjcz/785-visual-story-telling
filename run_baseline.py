@@ -11,7 +11,7 @@ import torch
 import pickle
 from baseline_model import *
 from hyperparams import *
-from bean_search import *
+from beam_search import *
 import os
 
 vocab_save_path = "vocab.pt"
