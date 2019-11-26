@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.utils.rnn as rnn
-
+import pdb
 
 # https://github.com/keitakurita/Better_LSTM_PyTorch/blob/master/better_lstm/model.py
 class VariationalDropout(nn.Module):
@@ -27,7 +27,7 @@ class VariationalDropout(nn.Module):
             max_batch_size = int(batch_sizes[0])
         else:
             batch_sizes = None
-            max_batch_size = x.size(0)
+            max_batch_size = x.size(1)
 
         # Drop same mask across entire sequence
         if self.batch_first:

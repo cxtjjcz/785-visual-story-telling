@@ -26,6 +26,7 @@ TODOs:
 
 """
 
+
 class fc7_Extractor(nn.Module):
     def __init__(self, cnn_type, fine_tune=False):
         super(fc7_Extractor, self).__init__()
@@ -34,12 +35,11 @@ class fc7_Extractor(nn.Module):
             self.pretrained = models.vgg16(pretrained=True)
             self.fine_tune(fine_tune)
         elif self.cnn_type == "resnet152":
-            resnet = models.resnet152(pretrained=True)
-            self.pretrained = nn.Sequential(*list(resnet.children())[:-2])
+            self.pretrained = models.resnet152(pretrained=True)
             self.fine_tune(fine_tune)
 
             # overwrite final fc layer to project features to vocab embedding size
-            self.resnet.fc = nn.Linear(self.pretrained.fc.in_features, EMBEDDING_SIZE)
+            self.pretrained.fc = nn.Linear(self.pretrained.fc.in_features, EMBEDDING_SIZE)
             self.bn = nn.BatchNorm1d(EMBEDDING_SIZE, momentum=0.01)
 
     def forward(self, x):
@@ -49,7 +49,7 @@ class fc7_Extractor(nn.Module):
             x = torch.flatten(x, 1)
             x = nn.Sequential(*list(self.pretrained.classifier.children())[:-1])(x)
         elif "resnet" in self.cnn_type:
-            x = self.resnet(x)  # (batch_size, embed_size)
+            x = self.pretrained(x)  # (batch_size, embed_size)
             x = self.bn(x)
         return x
 
@@ -75,7 +75,7 @@ class Encoder(nn.Module):
                         output_drop=OUTPUT_DROPOUT, weight_drop=WEIGHT_DROP,
                         num_layers=NUM_LAYERS_ENCODER)
 
-    def forward(self, images, hidden=None, device='cuda'):
+    def forward(self, images, hidden=None, device='cpu'):
         """
         :param images: (batch * num_pic * 3 * width * height)
         :param hidden: initial hidden state (default to None)
@@ -116,14 +116,14 @@ class Decoder(nn.Module):
         """
         padded_sentence = self.embedding(padded_sentence)  # (batch_size * max_seq_len * embedding_size)
         # add image embedding to front (as if it's the first word)
-        # TODO: check concat correctness
-        img_padded_sentence = torch.cat((image_embedding, padded_sentence), dim=1)
+        img_padded_sentence = torch.cat((image_embedding.unsqueeze(1), padded_sentence), dim=1)
         # img_padded_sentence : (batch_size * (max_seq_len+1) * embedding_size)
         img_padded_sentence = img_padded_sentence.permute(1, 0, 2)
         # img_padded_sentence : ((max_seq_len+1) * batch_size * embedding_size)
         lens += 1  # add one to max_seq_len
-        lens = lens.permute(1, 0)
+
         packed_stories = pack_padded_sequence(img_padded_sentence, lens, enforce_sorted=False)
+        # TODO: bug here!
         output, hidden = self.rnn(packed_stories, hidden)
         return output, hidden
 
@@ -149,12 +149,12 @@ class ModelV1(nn.Module):
     def forward(self, images, stories, story_lens, device='cuda'):
         """
         :param images: input images (batch_size * num_pic * 3 * width * height)
-        :param stories: padded input story sentences (batch_size * num_sent * max_sentence_len)
-        :param story_lens: input story sentences lengths (batch_size * num_sent * 1)
+        :param stories: padded input story sentences (num_sent * batch_size * max_sentence_len)
+        :param story_lens: input story sentences lengths (num_sent * batch_size)
         :param device: device
         :return:
         """
-        batch_size, num_sent, max_sent_len = stories.shape
+        num_sent, batch_size, max_sent_len = stories.shape
 
         embedded, _, hidden = self.encoder(images)
         # embedded: num_pic * batch_size * embedding_dim
@@ -164,10 +164,9 @@ class ModelV1(nn.Module):
         out_story_lens = torch.zeros((num_sent, batch_size))
 
         for i in range(NUM_SENTS):
-            # TODO: the sentence inputs are all batch first, kinda awkward
             image_embed_i = embedded[i, :, :]
-            story_i = stories[:, i, :]
-            story_len_i = story_lens[:, i, :]
+            story_i = stories[i, :, :]
+            story_len_i = story_lens[i, :]
             out_i, _ = self.decoders[i](image_embed_i, story_i, hidden, story_len_i)
             out_i, out_lens = pad_packed_sequence(out_i)
             # out_i: ((max_seq_len+1) * batch_size * hidden_size)
