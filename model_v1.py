@@ -9,6 +9,22 @@ from modules import LSTM
 from torch.nn.utils.rnn import pack_sequence, pad_packed_sequence, pad_sequence, pack_padded_sequence
 from hyperparams import *
 
+"""
+Changes:
+    (1) new fc7_extractor
+        - uses resnet152 by default
+        - added a new final linear layer at the end to project the image feature to vocab embedding dimension
+    (2) new encoder and decoder architecture:
+        - 5 separate decoders that takes the corresponding image feature (dimension = embedding dimension) 
+          and insert it to the front of the sentence embedding vector (as if it's the first word);
+          they still use the final hidden state as initial hidden state
+          
+TODOs:
+    - probably a lot of shape errors...
+    - unfinished ModelV1 forward function!
+    - see TODO comments for more details
+
+"""
 
 class fc7_Extractor(nn.Module):
     def __init__(self, cnn_type, fine_tune=False):
@@ -72,7 +88,7 @@ class Encoder(nn.Module):
             batch_i = images[:, -(i + 1), :, :, :]  # ith pics
             features = self.fc7(batch_i)  # features: batch * embedding_size
             embedded[i, :, :] = features
-        output, (hidden, cell) = self.rnn(embedded, hidden)
+        output, hidden = self.rnn(embedded, hidden)
         # embedded: num_pic * batch * embedding_size
         # output: num_pic, batch, hidden_size
         # hidden: 1, batch, hidden_size
@@ -108,7 +124,7 @@ class Decoder(nn.Module):
         lens += 1  # add one to max_seq_len
         lens = lens.permute(1, 0)
         packed_stories = pack_padded_sequence(img_padded_sentence, lens, enforce_sorted=False)
-        output, (hidden, cell) = self.rnn(packed_stories, hidden)
+        output, hidden = self.rnn(packed_stories, hidden)
         return output, hidden
 
 
@@ -158,7 +174,9 @@ class ModelV1(nn.Module):
             out_story[i] = out_i[1:, ]  # don't want the word predicted by the image embedding
             out_story_lens[i] = (out_lens - 1)
 
-        # TODO: adapt everything below this point!
+        ###############################################
+        ## TODO: adapt everything below this point!!###
+        ###############################################
         n_tokens = story_lens.sum() - story_lens.size(0)
 
         loss = 0.0
