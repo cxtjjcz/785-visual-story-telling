@@ -4,6 +4,7 @@ import os.path as osp
 from torch.utils.data import Dataset, DataLoader
 from torch.nn.utils.rnn import pack_sequence, pad_packed_sequence, pad_sequence
 from PIL import Image
+import torch.nn.functional as F
 from PIL import ImageFile
 import torchvision
 import numpy as np
@@ -18,7 +19,7 @@ class StoryDataset(Dataset):
         self.story_indices = list(self.sis.Stories.keys())
         self.vocab = vocab
         self.numpy_folder = './vist_api/images/Numpys/'
-        self.pre_process()
+        # self.pre_process()
 
     def __len__(self):
         #         return 10
@@ -65,24 +66,46 @@ class StoryDataset(Dataset):
 
         ## Setence Stuff
         sent_ids = story['sent_ids']
-        sent = ""
+        # sent = ""
+        sents = []
         for sent_id in sent_ids:
-            # Add a space for the sentence, probably want to just remove puncuation
-            sent += " " + self.sis.Sents[sent_id]["text"]
-        sent_tensor = self.vocab.sent2vec("<s> " + sent + " </s>")
+            # Add a space for the sentence, probably want to just remove punctuation
+            # sent += " " + self.sis.Sents[sent_id]["text"]
+            sents.append(self.vocab.sent2vec("<s> " + self.sis.Sents[sent_id]["text"] + " </s>"))
+        # sent_tensor = self.vocab.sent2vec("<s> " + sent + " </s>")
+        # sents_tensor = torch.stack(sents)
 
         # Return vals
-        return imgs, sent_tensor
+        return imgs, sents
 
 
 def collate_story(seq_list):
     """
-    TODO: change sents to be (batch_size, num_sents, max_sentence_length)
-          change sents_len to be (batch_size, num_sents, 1)
+
+    :param seq_list: [batch images, batch sentences]
+    :return: imgs: (batch_size * num_pic * 3 * width * height)
+             padded_stories: (num_sent, batch_size, max_seq_len)
+             sents_len: (num_sents, batch_size)
     """
 
     imgs, sents = zip(*seq_list)
     imgs = torch.stack(imgs)
-    sents_len = torch.Tensor([len(sent) for sent in sents])
-    sents = pad_sequence(sents, padding_value=3)
-    return imgs, sents, sents_len
+    # sents: a batch (list) of a list of sentences
+    sents_len = torch.Tensor([[len(sent) for sent in story] for story in sents])
+    batch_max_len = int(sents_len.max().item())
+
+    padded_stories = []
+    for story in sents:
+        padded_sents = []
+        for sent in story:
+            if len(sent) < batch_max_len:
+                padded_sents.append(F.pad(input=sent,
+                                          pad=(0, batch_max_len - len(sent)),
+                                          mode="constant", value=3))
+            else:
+                padded_sents.append(sent)
+        padded_stories.append(torch.stack(padded_sents))
+
+    padded_stories = torch.stack(padded_stories).permute(1, 0, 2)
+    sents_len = sents_len.permute(1, 0)
+    return imgs, padded_stories, sents_len
