@@ -66,18 +66,18 @@ class Encoder(nn.Module):
         self.fc7 = fc7_Extractor(cnn_type=FEATURE_EXTRACTOR)
         # divide hidden size by two when using bidirectional rnn
         # Edit, can't do this, because then you can't feed this into the decoder?
-#         if BIDIRECTIONAL_ENCODER:
-#             hidden_size = HIDDEN_SIZE // 2
-#         else:
-#             hidden_size = HIDDEN_SIZE
+        if BIDIRECTIONAL_ENCODER:
+            hidden_size = HIDDEN_SIZE // 2
+        else:
+            hidden_size = HIDDEN_SIZE
 
-#         self.rnn = LSTM(input_size=EMBEDDING_SIZE, hidden_size=hidden_size,
-#                         bidirectional=BIDIRECTIONAL_ENCODER, input_drop=INPUT_DROPOUT,
-#                         output_drop=OUTPUT_DROPOUT, weight_drop=WEIGHT_DROP,
-#                         num_layers=NUM_LAYERS_ENCODER)
-        self.rnn = nn.LSTM(input_size=EMBEDDING_SIZE, hidden_size=HIDDEN_SIZE,
-                        bidirectional=BIDIRECTIONAL_ENCODER,
+        self.rnn = LSTM(input_size=EMBEDDING_SIZE, hidden_size=hidden_size,
+                        bidirectional=BIDIRECTIONAL_ENCODER, input_drop=INPUT_DROPOUT,
+                        output_drop=OUTPUT_DROPOUT, weight_drop=WEIGHT_DROP,
                         num_layers=NUM_LAYERS_ENCODER)
+#         self.rnn = nn.LSTM(input_size=EMBEDDING_SIZE, hidden_size=HIDDEN_SIZE,
+#                         bidirectional=BIDIRECTIONAL_ENCODER,
+#                         num_layers=NUM_LAYERS_ENCODER)
 
     def forward(self, images, hidden=None):
         """
@@ -104,11 +104,11 @@ class Decoder(nn.Module):
         super(Decoder, self).__init__()
         self.hidden_size = HIDDEN_SIZE
         self.embedding = nn.Embedding(vocab_size, EMBEDDING_SIZE, padding_idx=3).to(DEVICE)
-        self.rnn = LSTM(input_size=EMBEDDING_SIZE, hidden_size=HIDDEN_SIZE,
-                        bidirectional=BIDIRECTIONAL_DECODER, input_drop=INPUT_DROPOUT,
-                        output_drop=OUTPUT_DROPOUT, weight_drop=WEIGHT_DROP,
-                        num_layers=NUM_LAYERS_DECODER,
-                        batch_first=True)
+#         self.rnn = LSTM(input_size=EMBEDDING_SIZE, hidden_size=HIDDEN_SIZE,
+#                         bidirectional=BIDIRECTIONAL_DECODER, input_drop=INPUT_DROPOUT,
+#                         output_drop=OUTPUT_DROPOUT, weight_drop=WEIGHT_DROP,
+#                         num_layers=NUM_LAYERS_DECODER,
+#                         batch_first=True)
         self.rnn = nn.LSTM(input_size=EMBEDDING_SIZE, hidden_size=HIDDEN_SIZE,
                         bidirectional=BIDIRECTIONAL_DECODER, 
                         num_layers=NUM_LAYERS_DECODER,
@@ -130,10 +130,19 @@ class Decoder(nn.Module):
         # img_padded_sentence : ((max_seq_len+1) * batch_size * embedding_size)
         lens += 1  # add one to max_seq_len
         
-        # output feels wrong atm
+        # output still feels wrong atm
         packed_stories = pack_padded_sequence(img_padded_sentence, lens, enforce_sorted=False)
-        # TODO: bug here!
+        
+        # HOT FIX, there seem to be hidden_size issues with using a 
+        # bidirectional lstm in the encoder and not a bi-lstm in the decoder.
+#         pdb.set_trace()
+        hidden = list(hidden)
+        hidden[0] = hidden[0].view(-1, BATCH_SIZE, HIDDEN_SIZE)
+        hidden[1] = hidden[1].view(-1, BATCH_SIZE, HIDDEN_SIZE)
+        hidden = tuple(hidden)
         output, hidden = self.rnn(packed_stories, hidden)
+#         pdb.set_trace()
+        
         return output, hidden
 
 
@@ -175,9 +184,13 @@ class ModelV1(nn.Module):
             image_embed_i = embedded[i, :, :]
             story_i = stories[i, :, :]
             story_len_i = story_lens[i, :]
+            
+            # TODO: Is there a reason you aren't updating the hidden state?
             out_i, _ = self.decoders[i](image_embed_i, story_i, hidden, story_len_i)
             out_i, out_lens = pad_packed_sequence(out_i)
+            
             # out_i: ((max_seq_len+1) * batch_size * hidden_size)
+            pdb.set_trace()
             out_story[i] = out_i[1:, ]  # don't want the word predicted by the image embedding
             out_story_lens[i] = (out_lens - 1)
         
