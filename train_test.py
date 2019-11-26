@@ -4,18 +4,21 @@ from hyperparams import *
 import numpy as np
 import torch
 from nltk.translate.bleu_score import corpus_bleu, SmoothingFunction
-def train(epochs, model, train_dataloader, optimizer, device):
+
+
+def train(epochs, model, train_dataloader, optimizer, device="cpu"):
     model.train()
     model.to(device)
     for epoch in range(epochs):
-        print('='*20)
+        print('=' * 20)
         print('Epoch: ', epoch)
-        print('='*20)
+        print('=' * 20)
         avg_loss = 0
         total_avg_loss = 0
         start_time = time.time()
         start_batch_time = time.time()
         for batch_num, (images, sents, sents_len) in enumerate(train_dataloader):
+            print(images.shape, sents.shape, sents_len.shape)
             optimizer.zero_grad()
             print(batch_num)
             # Process data and put on device
@@ -23,27 +26,28 @@ def train(epochs, model, train_dataloader, optimizer, device):
             sents = sents.long()
             sents_len = sents_len.long()
             images, sents, sents_len = images.to(device), sents.to(device), sents_len.to(device)
-            
+
             # Run through model
-            loss, output = model(images, sents, sents_len)
+            loss, output = model(images, sents, sents_len, device)
 
             avg_loss += loss.item()
             total_avg_loss += loss.item()
-            
+
             loss.backward()
-            
+
             clipping_value = 1
             torch.nn.utils.clip_grad_norm_(model.parameters(), clipping_value)
-            
+
             optimizer.step()
-        
+
         model_path = 'Training/'
         torch.save(model.state_dict(), model_path + str(epoch))
         end_time = time.time()
-        
+
         print('Total Epoch Time: ', end_time - start_time)
         print('Total Loss: ', total_avg_loss / len(train_dataloader))
-        
+
+
 def get_unprocessed_sent(data, sents, vocab):
     references = []
     hypotheses = []
@@ -54,14 +58,15 @@ def get_unprocessed_sent(data, sents, vocab):
     for i in range(data.shape[1]):
         ref_vec = (sents[:, i])
         hyp_vec = (data[:, i])
-        sentence = vocab.vec2sent(hyp_vec[np.where(hyp_vec > 3.0 )])
+        sentence = vocab.vec2sent(hyp_vec[np.where(hyp_vec > 3.0)])
         real_sentence = vocab.vec2sent(ref_vec[np.where(ref_vec > 3.0)])
         references.append(real_sentence)
         hypotheses.append(sentence)
     return references, hypotheses
 
+
 def get_bleu(refs, hyps, mode="write", ref_path="refs", hyp_path="hyps"):
-    if mode=="write":
+    if mode == "write":
         with open(ref_path, "w") as f:
             f.write("\n".join(refs))
             f.close()
@@ -75,7 +80,7 @@ def get_bleu(refs, hyps, mode="write", ref_path="refs", hyp_path="hyps"):
     refs = [[ref.split()] for ref in refs]
     hyps = [hyp.split() for hyp in hyps]
     bleu = corpus_bleu(refs, hyps, smoothing_function=smoothing_f)
-    print("BLEU Score: %.4f"%bleu)
+    print("BLEU Score: %.4f" % bleu)
 
 
 def test(model, dataloader, device, vocab):
@@ -83,7 +88,7 @@ def test(model, dataloader, device, vocab):
     with torch.no_grad():
         model.eval()
         model.to(device)
-        start_time = time.time() # Timeit
+        start_time = time.time()  # Timeit
         references = []
         hypotheses = []
         for batch_num, (images, sents, sents_len) in enumerate(dataloader):
@@ -95,7 +100,8 @@ def test(model, dataloader, device, vocab):
             # Run through model
             loss, output = model(images, sents, sents_len)
             decoder_output = torch.argmax(output, dim=2)
-            decoder_input = decoder_output.view(-1, sents.size()[1]) # (-1, batch_size) fixed batch_size at 1 for testing for now
+            decoder_input = decoder_output.view(-1, sents.size()[
+                1])  # (-1, batch_size) fixed batch_size at 1 for testing for now
             decoder_input = decoder_input.cpu().detach().numpy()
             sents = sents.cpu().detach().numpy()
             refs, hyps = get_unprocessed_sent(decoder_input, sents, vocab)
@@ -103,5 +109,5 @@ def test(model, dataloader, device, vocab):
             hypotheses.extend(hyps)
 
         get_bleu(references, hypotheses, mode="write")
-        end_time = time.time() # Timeit
+        end_time = time.time()  # Timeit
         print('Total Test Time: ', end_time - start_time)
