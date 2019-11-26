@@ -65,14 +65,18 @@ class Encoder(nn.Module):
         # now, fc7_Extractor returns image with dim. of EMBEDDING_SIZE
         self.fc7 = fc7_Extractor(cnn_type=FEATURE_EXTRACTOR)
         # divide hidden size by two when using bidirectional rnn
-        if BIDIRECTIONAL_ENCODER:
-            hidden_size = HIDDEN_SIZE // 2
-        else:
-            hidden_size = HIDDEN_SIZE
+        # Edit, can't do this, because then you can't feed this into the decoder?
+#         if BIDIRECTIONAL_ENCODER:
+#             hidden_size = HIDDEN_SIZE // 2
+#         else:
+#             hidden_size = HIDDEN_SIZE
 
-        self.rnn = LSTM(input_size=EMBEDDING_SIZE, hidden_size=hidden_size,
-                        bidirectional=BIDIRECTIONAL_ENCODER, input_drop=INPUT_DROPOUT,
-                        output_drop=OUTPUT_DROPOUT, weight_drop=WEIGHT_DROP,
+#         self.rnn = LSTM(input_size=EMBEDDING_SIZE, hidden_size=hidden_size,
+#                         bidirectional=BIDIRECTIONAL_ENCODER, input_drop=INPUT_DROPOUT,
+#                         output_drop=OUTPUT_DROPOUT, weight_drop=WEIGHT_DROP,
+#                         num_layers=NUM_LAYERS_ENCODER)
+        self.rnn = nn.LSTM(input_size=EMBEDDING_SIZE, hidden_size=HIDDEN_SIZE,
+                        bidirectional=BIDIRECTIONAL_ENCODER,
                         num_layers=NUM_LAYERS_ENCODER)
 
     def forward(self, images, hidden=None):
@@ -87,10 +91,11 @@ class Encoder(nn.Module):
             batch_i = images[:, -(i + 1), :, :, :]  # ith pics
             features = self.fc7(batch_i)  # features: batch * embedding_size
             embedded[i, :, :] = features
+        print('Encoder', embedded.shape)
         output, hidden = self.rnn(embedded, hidden)
         # embedded: num_pic * batch * embedding_size
         # output: num_pic, batch, hidden_size
-        # hidden: 1, batch, hidden_size
+        # hidden: 1, batch, hidden_size # updated
         return embedded, output, hidden
 
 
@@ -104,6 +109,10 @@ class Decoder(nn.Module):
                         output_drop=OUTPUT_DROPOUT, weight_drop=WEIGHT_DROP,
                         num_layers=NUM_LAYERS_DECODER,
                         batch_first=True)
+        self.rnn = nn.LSTM(input_size=EMBEDDING_SIZE, hidden_size=HIDDEN_SIZE,
+                        bidirectional=BIDIRECTIONAL_DECODER, 
+                        num_layers=NUM_LAYERS_DECODER,
+                        batch_first=True).to(DEVICE)
 
     def forward(self, image_embedding, padded_sentence, hidden, lens):
         """
@@ -121,10 +130,9 @@ class Decoder(nn.Module):
         # img_padded_sentence : ((max_seq_len+1) * batch_size * embedding_size)
         lens += 1  # add one to max_seq_len
         
-        pdb.set_trace()
+        # output feels wrong atm
         packed_stories = pack_padded_sequence(img_padded_sentence, lens, enforce_sorted=False)
         # TODO: bug here!
-        pdb.set_trace()
         output, hidden = self.rnn(packed_stories, hidden)
         return output, hidden
 
