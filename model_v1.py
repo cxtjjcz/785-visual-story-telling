@@ -190,8 +190,8 @@ class ModelV1(nn.Module):
             out_i, out_lens = pad_packed_sequence(out_i)
             
             # out_i: ((max_seq_len+1) * batch_size * hidden_size)
-            pdb.set_trace()
-            out_story[i] = out_i[1:, ]  # don't want the word predicted by the image embedding
+            end_length = out_i[1:, ].shape[0]
+            out_story[i, 0:end_length] = out_i[1:, ]  # don't want the word predicted by the image embedding
             out_story_lens[i] = (out_lens - 1)
         
         pdb.set_trace()
