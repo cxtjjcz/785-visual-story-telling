@@ -1,3 +1,4 @@
+import torch
 FEATURE_EXTRACTOR = "resnet152"
 FC7_SIZE = 4096
 HIDDEN_SIZE = 1024
@@ -15,3 +16,4 @@ BIDIRECTIONAL_ENCODER = True
 BIDIRECTIONAL_DECODER = False
 NUM_LAYERS_ENCODER = 3
 NUM_LAYERS_DECODER = 3
+DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'

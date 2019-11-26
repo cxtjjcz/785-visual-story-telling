@@ -6,9 +6,9 @@ import torch
 from nltk.translate.bleu_score import corpus_bleu, SmoothingFunction
 
 
-def train(epochs, model, train_dataloader, optimizer, device="cpu"):
+def train(epochs, model, train_dataloader, optimizer):
     model.train()
-    model.to(device)
+    model.to(DEVICE)
     for epoch in range(epochs):
         print('=' * 20)
         print('Epoch: ', epoch)
@@ -16,7 +16,6 @@ def train(epochs, model, train_dataloader, optimizer, device="cpu"):
         avg_loss = 0
         total_avg_loss = 0
         start_time = time.time()
-        start_batch_time = time.time()
         for batch_num, (images, sents, sents_len) in enumerate(train_dataloader):
             print(images.shape, sents.shape, sents_len.shape)
             optimizer.zero_grad()
@@ -25,10 +24,10 @@ def train(epochs, model, train_dataloader, optimizer, device="cpu"):
             images = images.float()
             sents = sents.long()
             sents_len = sents_len.long()
-            images, sents, sents_len = images.to(device), sents.to(device), sents_len.to(device)
+            images, sents, sents_len = images.to(DEVICE), sents.to(DEVICE), sents_len.to(DEVICE)
 
             # Run through model
-            loss, output = model(images, sents, sents_len, device)
+            loss, output = model(images, sents, sents_len)
 
             avg_loss += loss.item()
             total_avg_loss += loss.item()
@@ -42,10 +41,10 @@ def train(epochs, model, train_dataloader, optimizer, device="cpu"):
 
         model_path = 'Training/'
         torch.save(model.state_dict(), model_path + str(epoch))
-        end_time = time.time()
-
-        print('Total Epoch Time: ', end_time - start_time)
         print('Total Loss: ', total_avg_loss / len(train_dataloader))
+        
+        end_time = time.time()
+        print('Total Epoch Time: ', end_time - start_time)
 
 
 def get_unprocessed_sent(data, sents, vocab):
@@ -83,11 +82,11 @@ def get_bleu(refs, hyps, mode="write", ref_path="refs", hyp_path="hyps"):
     print("BLEU Score: %.4f" % bleu)
 
 
-def test(model, dataloader, device, vocab):
+def test(model, dataloader, vocab):
     # Place model in test mode
     with torch.no_grad():
         model.eval()
-        model.to(device)
+        model.to(DEVICE)
         start_time = time.time()  # Timeit
         references = []
         hypotheses = []
@@ -96,7 +95,7 @@ def test(model, dataloader, device, vocab):
             images = images.float()
             sents = sents.long()
             sents_len = sents_len.long()
-            images, sents, sents_len = images.to(device), sents.to(device), sents_len.to(device)
+            images, sents, sents_len = images.to(DEVICE), sents.to(DEVICE), sents_len.to(DEVICE)
             # Run through model
             loss, output = model(images, sents, sents_len)
             decoder_output = torch.argmax(output, dim=2)

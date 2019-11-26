@@ -75,15 +75,14 @@ class Encoder(nn.Module):
                         output_drop=OUTPUT_DROPOUT, weight_drop=WEIGHT_DROP,
                         num_layers=NUM_LAYERS_ENCODER)
 
-    def forward(self, images, hidden=None, device='cpu'):
+    def forward(self, images, hidden=None):
         """
         :param images: (batch * num_pic * 3 * width * height)
         :param hidden: initial hidden state (default to None)
-        :param device: device
         :return: image features, encoder outputs, encoder final hidden state
         """
         batch_size, num_pics, channels, width, height = images.size()
-        embedded = torch.zeros((num_pics, batch_size, EMBEDDING_SIZE)).to(device)
+        embedded = torch.zeros((num_pics, batch_size, EMBEDDING_SIZE)).to(DEVICE)
         for i in range(num_pics):
             batch_i = images[:, -(i + 1), :, :, :]  # ith pics
             features = self.fc7(batch_i)  # features: batch * embedding_size
@@ -99,7 +98,7 @@ class Decoder(nn.Module):
     def __init__(self, vocab_size):
         super(Decoder, self).__init__()
         self.hidden_size = HIDDEN_SIZE
-        self.embedding = nn.Embedding(vocab_size, EMBEDDING_SIZE, padding_idx=3)
+        self.embedding = nn.Embedding(vocab_size, EMBEDDING_SIZE, padding_idx=3).to(DEVICE)
         self.rnn = LSTM(input_size=EMBEDDING_SIZE, hidden_size=HIDDEN_SIZE,
                         bidirectional=BIDIRECTIONAL_DECODER, input_drop=INPUT_DROPOUT,
                         output_drop=OUTPUT_DROPOUT, weight_drop=WEIGHT_DROP,
@@ -121,9 +120,11 @@ class Decoder(nn.Module):
         img_padded_sentence = img_padded_sentence.permute(1, 0, 2)
         # img_padded_sentence : ((max_seq_len+1) * batch_size * embedding_size)
         lens += 1  # add one to max_seq_len
-
+        
+        pdb.set_trace()
         packed_stories = pack_padded_sequence(img_padded_sentence, lens, enforce_sorted=False)
         # TODO: bug here!
+        pdb.set_trace()
         output, hidden = self.rnn(packed_stories, hidden)
         return output, hidden
 
@@ -146,12 +147,11 @@ class ModelV1(nn.Module):
         output = self.out_layer(output)
         return output, hidden
 
-    def forward(self, images, stories, story_lens, device='cuda'):
+    def forward(self, images, stories, story_lens):
         """
         :param images: input images (batch_size * num_pic * 3 * width * height)
         :param stories: padded input story sentences (num_sent * batch_size * max_sentence_len)
         :param story_lens: input story sentences lengths (num_sent * batch_size)
-        :param device: device
         :return:
         """
         num_sent, batch_size, max_sent_len = stories.shape
@@ -172,7 +172,8 @@ class ModelV1(nn.Module):
             # out_i: ((max_seq_len+1) * batch_size * hidden_size)
             out_story[i] = out_i[1:, ]  # don't want the word predicted by the image embedding
             out_story_lens[i] = (out_lens - 1)
-
+        
+        pdb.set_trace()
         ###############################################
         ## TODO: adapt everything below this point!!###
         ###############################################

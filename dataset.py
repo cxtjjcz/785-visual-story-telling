@@ -89,7 +89,7 @@ def collate_story(seq_list):
     """
 
     imgs, sents = zip(*seq_list)
-    imgs = torch.stack(imgs)
+    imgs = torch.stack(imgs).to(DEVICE)
     # sents: a batch (list) of a list of sentences
     sents_len = torch.Tensor([[len(sent) for sent in story] for story in sents])
     batch_max_len = int(sents_len.max().item())
@@ -106,6 +106,6 @@ def collate_story(seq_list):
                 padded_sents.append(sent)
         padded_stories.append(torch.stack(padded_sents))
 
-    padded_stories = torch.stack(padded_stories).permute(1, 0, 2)
+    padded_stories = torch.stack(padded_stories).permute(1, 0, 2).to(DEVICE)
     sents_len = sents_len.permute(1, 0)
     return imgs, padded_stories, sents_len
