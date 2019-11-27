@@ -23,9 +23,8 @@ class VariationalDropout(nn.Module):
 
         is_packed = isinstance(x, rnn.PackedSequence)
         if is_packed:
-#             pdb.set_trace() # Broken here, 
-            x, batch_sizes = x.data, x.batch_sizes
-            max_batch_size = int(batch_sizes[0])
+            x, batch_sizes = rnn.pad_packed_sequence(x)
+            max_batch_size = x.size(1)
         else:
             batch_sizes = None
             max_batch_size = x.size(1)
@@ -38,7 +37,7 @@ class VariationalDropout(nn.Module):
         x = x.masked_fill(m == 0, 0) / (1 - self.dropout)
 
         if is_packed:
-            return rnn.PackedSequence(x, batch_sizes)
+            return rnn.pack_padded_sequence(x, batch_sizes, enforce_sorted=False)
         else:
             return x
 

@@ -75,9 +75,6 @@ class Encoder(nn.Module):
                         bidirectional=BIDIRECTIONAL_ENCODER, input_drop=INPUT_DROPOUT,
                         output_drop=OUTPUT_DROPOUT, weight_drop=WEIGHT_DROP,
                         num_layers=NUM_LAYERS_ENCODER)
-#         self.rnn = nn.LSTM(input_size=EMBEDDING_SIZE, hidden_size=HIDDEN_SIZE,
-#                         bidirectional=BIDIRECTIONAL_ENCODER,
-#                         num_layers=NUM_LAYERS_ENCODER)
 
     def forward(self, images, hidden=None):
         """
@@ -91,7 +88,6 @@ class Encoder(nn.Module):
             batch_i = images[:, -(i + 1), :, :, :]  # ith pics
             features = self.fc7(batch_i)  # features: batch * embedding_size
             embedded[i, :, :] = features
-        print('Encoder', embedded.shape)
         output, hidden = self.rnn(embedded, hidden)
         # embedded: num_pic * batch * embedding_size
         # output: num_pic, batch, hidden_size
@@ -104,15 +100,10 @@ class Decoder(nn.Module):
         super(Decoder, self).__init__()
         self.hidden_size = HIDDEN_SIZE
         self.embedding = nn.Embedding(vocab_size, EMBEDDING_SIZE, padding_idx=3).to(DEVICE)
-#         self.rnn = LSTM(input_size=EMBEDDING_SIZE, hidden_size=HIDDEN_SIZE,
-#                         bidirectional=BIDIRECTIONAL_DECODER, input_drop=INPUT_DROPOUT,
-#                         output_drop=OUTPUT_DROPOUT, weight_drop=WEIGHT_DROP,
-#                         num_layers=NUM_LAYERS_DECODER,
-#                         batch_first=True)
-        self.rnn = nn.LSTM(input_size=EMBEDDING_SIZE, hidden_size=HIDDEN_SIZE,
-                        bidirectional=BIDIRECTIONAL_DECODER, 
-                        num_layers=NUM_LAYERS_DECODER,
-                        batch_first=True).to(DEVICE)
+        self.rnn = LSTM(input_size=EMBEDDING_SIZE, hidden_size=HIDDEN_SIZE,
+                        bidirectional=BIDIRECTIONAL_DECODER, input_drop=INPUT_DROPOUT,
+                        output_drop=OUTPUT_DROPOUT, weight_drop=WEIGHT_DROP,
+                        num_layers=NUM_LAYERS_DECODER)
 
     def forward(self, image_embedding, padded_sentence, hidden, lens):
         """
@@ -122,6 +113,7 @@ class Decoder(nn.Module):
         :param lens: (batch_size * 1)
         :return:
         """
+        batch_size = image_embedding.shape[0]
         padded_sentence = self.embedding(padded_sentence)  # (batch_size * max_seq_len * embedding_size)
         # add image embedding to front (as if it's the first word)
         img_padded_sentence = torch.cat((image_embedding.unsqueeze(1), padded_sentence), dim=1)
@@ -129,20 +121,21 @@ class Decoder(nn.Module):
         img_padded_sentence = img_padded_sentence.permute(1, 0, 2)
         # img_padded_sentence : ((max_seq_len+1) * batch_size * embedding_size)
         lens += 1  # add one to max_seq_len
-        
+
         # output still feels wrong atm
         packed_stories = pack_padded_sequence(img_padded_sentence, lens, enforce_sorted=False)
-        
-        # HOT FIX, there seem to be hidden_size issues with using a 
-        # bidirectional lstm in the encoder and not a bi-lstm in the decoder.
-#         pdb.set_trace()
-        hidden = list(hidden)
-        hidden[0] = hidden[0].view(-1, BATCH_SIZE, HIDDEN_SIZE)
-        hidden[1] = hidden[1].view(-1, BATCH_SIZE, HIDDEN_SIZE)
-        hidden = tuple(hidden)
-        output, hidden = self.rnn(packed_stories, hidden)
-#         pdb.set_trace()
-        
+
+        # TODO: checkout the Encoder section of
+        # https://github.com/bastings/annotated_encoder_decoder/blob/master/annotated_encoder_decoder.ipynb
+        fwd_hidden = hidden[0][0:hidden[0].size(0):2]
+        bwd_hidden = hidden[0][1:hidden[0].size(0):2]
+        final_hidden = torch.cat([fwd_hidden, bwd_hidden], dim=2)  # [num_layers, batch_size, 2*hidden_dim]
+
+        fwd_cell = hidden[1][0:hidden[1].size(0):2]
+        bwd_cell = hidden[1][1:hidden[1].size(0):2]
+        final_cell = torch.cat([fwd_cell, bwd_cell], dim=2)  # [num_layers, batch_size, 2*hidden_dim]
+
+        output, hidden = self.rnn(packed_stories, (final_hidden, final_cell))
         return output, hidden
 
 
@@ -156,6 +149,7 @@ class ModelV1(nn.Module):
         self.out_layer = nn.Linear(HIDDEN_SIZE, len(vocab))
         self.vocab_length = len(vocab)
         self.logSoftmax = nn.LogSoftmax(dim=2)
+        self.criterion = nn.NLLLoss(reduction='sum')
 
     def get_decoded_output(self, decoder_input, hidden, lens):
         # TODO: adapt this
@@ -178,39 +172,39 @@ class ModelV1(nn.Module):
         # hidden: 1 * batch_size * hidden_size
 
         out_story = torch.zeros((num_sent, max_sent_len, batch_size, HIDDEN_SIZE))
-        out_story_lens = torch.zeros((num_sent, batch_size))
+        out_story_lens = story_lens.clone()  # story_len does not change
 
         for i in range(NUM_SENTS):
             image_embed_i = embedded[i, :, :]
             story_i = stories[i, :, :]
             story_len_i = story_lens[i, :]
-            
-            # TODO: Is there a reason you aren't updating the hidden state?
+            # NOTE: inside decoder, we pack_padded_sequence the ith sentences and then pad_packed_sequence.
+            # However, the max_seq_len changes to the maximum value for this batch of sentences
+            # instead of the global max_seq_len for all sentences
             out_i, _ = self.decoders[i](image_embed_i, story_i, hidden, story_len_i)
             out_i, out_lens = pad_packed_sequence(out_i)
-            
-            # out_i: ((max_seq_len+1) * batch_size * hidden_size)
+            # out_i: ((max_seq_len_batch+1) * batch_size * hidden_size)
             end_length = out_i[1:, ].shape[0]
             out_story[i, 0:end_length] = out_i[1:, ]  # don't want the word predicted by the image embedding
-            out_story_lens[i] = (out_lens - 1)
-        
-        pdb.set_trace()
-        ###############################################
-        ## TODO: adapt everything below this point!!###
-        ###############################################
-        n_tokens = story_lens.sum() - story_lens.size(0)
 
+        # TODO: check loss computation
+        n_tokens = 0
         loss = 0.0
-        criterion = nn.CrossEntropyLoss(reduction='sum')
+        out_probs = []
 
-        out, out_lens = pad_packed_sequence(out)
-        out = self.out_layer(out)
-        out = self.logSoftmax(out)
-
-        for i in range(out.size()[0] - 1):
-            active = i + 1 < story_lens
-            loss += criterion(out[i, active, :], stories[i + 1, active])
+        for i in range(NUM_SENTS):
+            out_i = self.out_layer(out_story[i, :, :, :])
+            score_i = self.logSoftmax(out_i)
+            out_probs.append(score_i)
+            story_len_i = out_story_lens[i, :]
+            ground_truth_story_i = stories[i, :, :]
+            for j in range(score_i.size()[0] - 1):
+                active = j + 1 < story_len_i
+                if active.sum() == 0:
+                    break
+                n_tokens += active.sum()
+                loss += self.criterion(score_i[j, active, :], ground_truth_story_i[active, j + 1])
 
         loss /= n_tokens
 
-        return loss, out
+        return loss, out_probs

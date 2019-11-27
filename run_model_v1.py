@@ -59,7 +59,7 @@ def main():
     isTraining = True
 
     if isTraining:
-        train(10, model_v1, train_loader, optimizer, device)
+        train(10, model_v1, train_loader, optimizer)
     else:
         model_v1.load_state_dict(torch.load('./Training/7'))
         test_loader = DataLoader(train_story_set, shuffle=False, batch_size=BATCH_SIZE, collate_fn=collate_story)
