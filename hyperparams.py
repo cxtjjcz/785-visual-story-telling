@@ -16,4 +16,5 @@ BIDIRECTIONAL_ENCODER = True
 BIDIRECTIONAL_DECODER = False 
 NUM_LAYERS_ENCODER = 3
 NUM_LAYERS_DECODER = 3
+FEATURE_MAP_DIM = 14
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
