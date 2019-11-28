@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.utils.rnn as rnn
 import pdb
 
+
 # https://github.com/keitakurita/Better_LSTM_PyTorch/blob/master/better_lstm/model.py
 class VariationalDropout(nn.Module):
     """
@@ -118,3 +119,10 @@ class Attention(nn.Module):
         attention_weighted_encoding = (encoder_out * alpha.unsqueeze(2)).sum(dim=1)  # (batch_size, encoder_dim)
 
         return attention_weighted_encoding, alpha
+
+
+def global_weight_init(m):
+    if isinstance(m, nn.Linear):
+        torch.nn.init.xavier_uniform_(m.weight)
+        if m.bias is not None:
+            torch.nn.init.zeros_(m.bias)
