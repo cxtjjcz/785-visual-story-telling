@@ -19,7 +19,7 @@ class StoryDataset(Dataset):
         self.story_indices = list(self.sis.Stories.keys())
         self.vocab = vocab
         self.numpy_folder = './vist_api/images/Numpys/'
-        # self.pre_process()
+        self.pre_process()
 
     def __len__(self):
         #         return 10
