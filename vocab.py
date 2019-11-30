@@ -50,7 +50,7 @@ class Vocabulary():
     def sent2vec(self, sent, tokenized=False):
         if not tokenized:
             sent = sent.split()
-        return torch.tensor([self[w] for w in sent]).type(torch.LongTensor)
+        return torch.tensor([self.w2i[w] for w in sent]).type(torch.LongTensor)
 
     def vec2sent(self, sent):
         result = [self.i2w[i] for i in sent] # need to add ' ' to dictionary
