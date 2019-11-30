@@ -19,7 +19,23 @@ class StoryDataset(Dataset):
         self.story_indices = list(self.sis.Stories.keys())
         self.vocab = vocab
         self.numpy_folder = './vist_api/images/Numpys/'
+        self.invalid = "broken_stories.txt"
         self.pre_process()
+        self.remove_invalid(self.invalid)
+
+    def remove_invalid(self, path):
+        invalids = open(path).read().split("\n")
+        # pdb.set_trace()
+        # invalids = [self.story_indices.remove(invalid) for invalid in invalids]
+        for invalid in invalids:
+            try:
+                self.story_indices.remove(invalid)
+                print("removed %s"%invalid)
+            except Exception as e:
+                print(e)
+                print(invalid, invalid in self.story_indices)
+
+
 
     def __len__(self):
         #         return 10
@@ -30,20 +46,34 @@ class StoryDataset(Dataset):
     def pre_process(self):
         start_time = time.time()
         numpys = set(os.listdir(self.numpy_folder))
+        broken_stories = []
+        print(len(self.story_indices))
         for story_id in self.story_indices:
             story = self.sis.Stories[story_id]
             img_ids = story['img_ids']
             imgs = []
             if (story_id + '.npy' not in numpys):
                 for i, img_id in enumerate(img_ids):
-                    img_file = osp.join(self.sis.images_dir, img_id + '.jpg')
-                    img_tensor = self.read_image(img_file)
-                    imgs.append(img_tensor)
-                imgs = torch.stack(imgs)
-                numpy_name = self.numpy_folder + story_id
-                to_save = np.array(imgs)
-                np.save(numpy_name, to_save)
+                    try:
+                        img_file = osp.join(self.sis.images_dir, img_id + '.jpg')
+                        img_tensor = self.read_image(img_file)
+                        imgs.append(img_tensor)
+                    except Exception as e:
+                        print(e)
+                        broken_stories.append(story_id)
+                if story_id not in broken_stories:
+                    imgs = torch.stack(imgs)
+                    numpy_name = self.numpy_folder + story_id
+                    to_save = np.array(imgs)
+                    np.save(numpy_name, to_save)
 
+
+        print("Stories that are broken: ", broken_stories)
+        with open(self.invalid, "w") as f:
+            f.write("\n".join([str(broken_id) for broken_id in broken_stories]))
+            f.close()
+
+        
         end_time = time.time()
         print('Processing Images Time: ', end_time - start_time)
 
@@ -53,9 +83,13 @@ class StoryDataset(Dataset):
         img = torchvision.transforms.Resize((224, 224))(img)
         img = torchvision.transforms.ToTensor()(img)
         # If image is blank and white, make a new tensor and place it inside of it.
-        if (img.shape[0] != 3):
+        
+        if (img.shape[0] < 3):
             img = img.view(224, 224)
             img = torch.stack([img, img, img])
+        else:
+            # RGBA
+            img = img[0:3, :, :]
         return img
 
     def __getitem__(self, idx):
