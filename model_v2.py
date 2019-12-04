@@ -190,8 +190,6 @@ class Decoder(nn.Module):
         batch_size = image_embedding.size(0)
         padded_sentence = self.embedding(padded_sentence)  # (batch_size, max_seq_len, embedding_size)
         h, c = self.init_hidden_state(encoder_hidden)  # each is (batch_size, hidden_dim)
-
-        # Sort everything so that they ordered in decreasing sentence length order!!!!
         ordered_sentence_lens, ordered_idx = sentence_lens.sort(descending=True)
         image_embedding = image_embedding[ordered_idx]
         padded_sentence = padded_sentence[ordered_idx]
@@ -218,8 +216,8 @@ class Decoder(nn.Module):
             h, c = self.decode_step(torch.cat([padded_sentence[0:batch_size_t, t, :],
                                                gated_context], dim=1),
                                     (h_active, c_active))
-            outputs[:, t, :] = h
-            alphas[:, t] = alpha
+            outputs[:batch_size_t, t, :] = h
+            alphas[:batch_size_t, t] = alpha
 
         # put them back
         outputs = outputs[ordered_idx]
@@ -266,9 +264,10 @@ class ModelV2(nn.Module):
         # embedded: (num_pic, batch_size, feature_map_dim**2, encoder_dim)
         # hidden: ????
 
-        out_story = torch.zeros((num_sent, batch_size, max_sent_len, HIDDEN_SIZE))
-        out_attention = torch.zeros((num_sent, batch_size, max_sent_len, self.attention_pixel_dim))
+        out_story = torch.zeros((num_sent, batch_size, max_sent_len, HIDDEN_SIZE)).to(DEVICE)
+        out_attention = torch.zeros((num_sent, batch_size, max_sent_len, self.attention_pixel_dim)).to(DEVICE)
         out_story_lens = story_lens.clone()  # story_len does not change
+
 
         for i in range(NUM_SENTS):
             image_embed_i = embedded[i, :, :]
@@ -282,7 +281,7 @@ class ModelV2(nn.Module):
             # out_i: (batch_size, max_seq_len_batch * hidden_size)
             end_length = out_i.size(1)
             out_story[i, :, 0:end_length, :] = out_i
-
+            out_attention[i, :, 0:end_length, :] = alpha_i
 
         # TODO: check loss computation
         n_tokens = 0
@@ -292,7 +291,7 @@ class ModelV2(nn.Module):
         for i in range(NUM_SENTS):
             out_i = self.out_layer(out_story[i, :, :, :])
             score_i = self.logSoftmax(out_i)
-            out_probs.append(score_i)
+            out_probs.append(score_i.cpu())
             story_len_i = out_story_lens[i, :]
             ground_truth_story_i = stories[i, :, :]
             for j in range(score_i.size(1) - 1):
@@ -304,4 +303,4 @@ class ModelV2(nn.Module):
 
         loss /= n_tokens
 
-        return loss, out_probs
+        return loss, out_probs, out_attention

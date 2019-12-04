@@ -1,3 +1,8 @@
 
 .DS_Store
 .Rhistory
+vist_api/images
+.idea/
+.ipynb_checkpoints/
+__pycache__/
+Training/

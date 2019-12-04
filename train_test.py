@@ -17,9 +17,11 @@ def train(epochs, model, train_dataloader, optimizer):
         total_avg_loss = 0
         start_time = time.time()
         for batch_num, (images, sents, sents_len) in enumerate(train_dataloader):
-            print(images.shape, sents.shape, sents_len.shape)
+            # print(images.shape, sents.shape, sents_len.shape)
             optimizer.zero_grad()
-            print(batch_num)
+            if batch_num % PRINT_FREQ == 0:
+                print("batch: %d loss: %f"%(batch_num, avg_loss/PRINT_FREQ))
+                avg_loss = 0
             # Process data and put on device
             images = images.float()
             sents = sents.long()
@@ -27,7 +29,7 @@ def train(epochs, model, train_dataloader, optimizer):
             images, sents, sents_len = images.to(DEVICE), sents.to(DEVICE), sents_len.to(DEVICE)
 
             # Run through model
-            loss, output = model(images, sents, sents_len)
+            loss, output, attns = model(images, sents, sents_len)
 
             avg_loss += loss.item()
             total_avg_loss += loss.item()
@@ -83,6 +85,7 @@ def get_bleu(refs, hyps, mode="write", ref_path="refs", hyp_path="hyps"):
 
 
 def test(model, dataloader, vocab):
+    # TODO: ADAPT TO MODEL2 
     # Place model in test mode
     with torch.no_grad():
         model.eval()
