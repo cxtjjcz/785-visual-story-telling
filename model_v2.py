@@ -151,6 +151,33 @@ class Decoder(nn.Module):
 
         return final_hidden, final_cell
 
+    # generate the sequence
+    def generate(self, image_embedding, encoder_hidden):
+        batch_size = image_embedding.size(0)
+        h, c = self.init_hidden_state(encoder_hidden)  # each is (batch_size, hidden_dim)
+        max_seq_len = MAX_SENT_LEN
+        alphas = torch.zeros(batch_size, max_seq_len, self.num_pixels).to(DEVICE)
+        outputs = torch.zeros(batch_size, max_seq_len, self.hidden_size).to(DEVICE)
+        words = torch.zeros(batch_size, max_seq_len).to(DEVICE)
+        for t in range(max_seq_len-1):
+            h_active, c_active = h, c
+            context, alpha = self.attention(image_embedding, h_active)
+            gate = self.sigmoid(self.f_beta(h_active))  # gating scalar, (batch_size, encoder_dim)
+            gated_context = gate * context
+
+            # get the previous word
+            prev_word = words[:, t].long()
+            embedded = self.embedding(prev_word)
+
+            h, c = self.decode_step(torch.cat([embedded,
+                                               gated_context], dim=1),
+                                    (h_active, c_active))
+
+            outputs[:, t, :] = h
+            alphas[:, t] = alpha
+            words[:, t+1] = torch.argmax(h, dim=1)
+        return outputs, alphas, words
+
     def forward(self, image_embedding, padded_sentence, encoder_hidden, sentence_lens):
         """
         :param image_embedding: image embedding for the corresponding sentence:
@@ -175,8 +202,8 @@ class Decoder(nn.Module):
         # padded_sentence = self.input_drop(padded_sentence)
 
         decode_lengths = sentence_lens.tolist()
-        max_seq_len = max(decode_lengths)
-
+        max_seq_len = int(max(decode_lengths))
+        # print(batch_size, max_seq_len, self.num_pixels)
         alphas = torch.zeros(batch_size, max_seq_len, self.num_pixels).to(DEVICE)
         outputs = torch.zeros(batch_size, max_seq_len, self.hidden_size).to(DEVICE)
 

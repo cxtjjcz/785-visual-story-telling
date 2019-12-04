@@ -4,7 +4,7 @@ from hyperparams import *
 import numpy as np
 import torch
 from nltk.translate.bleu_score import corpus_bleu, SmoothingFunction
-
+from beam_search import *
 
 def train(epochs, model, train_dataloader, optimizer):
     model.train()
@@ -110,3 +110,42 @@ def test(model, dataloader, vocab):
         get_bleu(references, hypotheses, mode="write")
         end_time = time.time()  # Timeit
         print('Total Test Time: ', end_time - start_time)
+
+
+def test_v2(model, dataloader, vocab):
+    # greedy
+    with torch.no_grad():
+        model.eval()
+        model.to(DEVICE)
+        start_time = time.time()
+        references = []
+        hypotheses = []
+        for batch_num, (images, sents, sents_len) in enumerate(dataloader):
+            print(images.shape, sents.shape, sents_len.shape)
+            print(batch_num)
+            # Process data and put on device
+            images = images.float()
+            sents = sents.long()
+            sents_len = sents_len.long()
+            images, sents, sents_len = images.to(DEVICE), sents.to(DEVICE), sents_len.to(DEVICE)
+            hypothesis = greedy_decode_v2(model, images, vocab)
+            reference = get_reference(sents, vocab)
+            print("Hyp: " + hypothesis)
+            print("Ref: " + reference)
+            hypotheses.append(hypothesis)
+            references.append(reference)
+        get_bleu(references, hypotheses, mode="write")
+        end_time = time.time()  # Timeit
+        print('Total Test Time: ', end_time - start_time)
+
+
+def test_v2_tf(model, dataloader, vocab):
+    with torch.no_grad():
+        model.eval()
+        model.to(DEVICE)
+        for batch_num, (images, sents, sents_len) in enumerate(dataloader):
+            loss, out_probs = model(images, sents, sents_len)
+            for i in range(NUM_SENTS):
+                out_prob = out_probs[i]
+                out = torch.argmax(out_prob, dim=1)
+                print(out)

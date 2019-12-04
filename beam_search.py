@@ -167,3 +167,40 @@ def greedy_decode(model, encoder_input, device, vocab):
 
     model.train()
     get_unprocessed_sent(decoded_batch, vocab)
+
+
+def get_reference(sents, vocab):
+    num_sent, batch_size, max_sent_len = sents.shape
+    reference = []
+
+    for i in range(NUM_SENTS):
+        sent = sents[i].squeeze()
+        # print(sent)
+        for word_idx in sent[1:]:
+            word_idx = int(word_idx.item())
+            reference.append(vocab.i2w[word_idx])
+    return " ".join(reference)
+
+def greedy_decode_v2(model, images, vocab):
+    """
+    :param vocab: vocab class
+    :param device: device
+    :param encoder_input: images input
+    :param model: model
+    """
+    model.eval()
+    embedded, _, hidden = model.encoder(images)
+    assert(images.size(0) == 1) # only for for batch_size = 1 now
+    hypothesis = []
+    for i in range(NUM_SENTS):
+        decoder_i = model.decoders[i]
+        embedded_i = embedded[i]
+        outputs, alphas, words = decoder_i.generate(embedded_i, hidden)
+        words = words.squeeze().cpu().numpy()
+        for word_idx in words[1:]: # skip SOS
+            word_idx = int(word_idx.item())
+            if word_idx == vocab["</s>"]: # stop when seeing a EOS
+                break
+            else:
+                hypothesis.append(vocab.i2w[word_idx])
+    return " ".join(hypothesis)
